@@ -158,27 +158,53 @@ class GenerateJsonCommand extends Command
      */
     private function addVersionsUnderDelopment(array $prestashopVersions): array
     {
-        // Add current development version so that its module's list is available, but only if it is not part of the released ones.
-        $developmentVersion = '9.0.0';
-        $nextPatchVersion = '8.1.4';
+        if (empty($prestashopVersions)) {
+            return $prestashopVersions;
+        }
 
-        // Check if versions are already in the list
-        $addDevelopmentVersion = true;
-        $addPatchVersion = true;
+        // Get highest version available
+        $highestVersion = null;
         foreach ($prestashopVersions as $prestashopVersion) {
-            if ($prestashopVersion->getVersion() === $developmentVersion) {
-                $addDevelopmentVersion = false;
-            }
-            if ($prestashopVersion->getVersion() === $nextPatchVersion) {
-                $addPatchVersion = false;
+            if ($highestVersion === null || version_compare($prestashopVersion->getVersion(), $highestVersion->getVersion(), '>')) {
+                $highestVersion = $prestashopVersion;
             }
         }
 
-        // Now add versions if needed
-        if ($addPatchVersion) {
-            $prestashopVersions[] = new PrestaShop($nextPatchVersion);
+        // We will also add the next previous version, if found
+        $possiblePreviousMajor = $highestVersion->getMajorVersionNumber() - 1;
+        $highestPreviousVersion = null;
+        foreach ($prestashopVersions as $prestashopVersion) {
+            if (($highestPreviousVersion === null || version_compare($prestashopVersion->getVersion(), $highestPreviousVersion->getVersion(), '>')) &&
+                $prestashopVersion->getMajorVersionNumber() == $possiblePreviousMajor &&
+                !str_starts_with($prestashopVersion->getVersion(), '1.')) {
+                $highestPreviousVersion = $prestashopVersion;
+            }
         }
-        if ($addDevelopmentVersion) {
+
+        /*
+         * Now we have resolved two last versions on major channels.
+         * For example, 8.1.4 and 9.0.0.
+         * Now we will add some possible next versions that may be in development.
+         */
+        $developmentVersions = [];
+        $developmentVersions[] = $highestVersion->getNextMajorVersion();
+        $developmentVersions[] = $highestVersion->getNextMinorVersion();
+        $developmentVersions[] = $highestVersion->getNextPatchVersion();
+        if (!empty($highestPreviousVersion)) {
+            $developmentVersions[] = $highestPreviousVersion->getNextMinorVersion();
+            $developmentVersions[] = $highestPreviousVersion->getNextPatchVersion();
+        }
+
+        // Remove all development versions that are already in the list, for some reason
+        foreach ($prestashopVersions as $prestashopVersion) {
+            if (in_array($prestashopVersion->getVersion(), $developmentVersions)) {
+                $key = array_search($prestashopVersion->getVersion(), $developmentVersions);
+                unset($developmentVersions[$key]);
+            }
+        }
+
+        // Add all of them to the list
+        foreach ($developmentVersions as $developmentVersion) {
             $prestashopVersions[] = new PrestaShop($developmentVersion);
         }
 
